@@ -1,4 +1,4 @@
-# Contributing to WaveML-JAX
+# Contributing to WaveML
 
 Thank you for your interest in contributing to **WaveML-JAX** (Lightborne Intelligence).
 
