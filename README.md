@@ -1,4 +1,17 @@
 # WaveML  
+## Naming and Imports
+
+- **GitHub repository:** `WaveML`
+- **Python package:** `waveml_jax`
+
+The repository name reflects the project identity.
+The Python package name follows standard import conventions.
+
+Example:
+
+```python
+import waveml_jax
+from waveml_jax.core.representation import WaveState
 ### Error Rectification by Alignment (ERA) — Reference Implementation
 
 **Lightborne Intelligence**
