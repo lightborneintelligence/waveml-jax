@@ -13,22 +13,10 @@ from typing import NamedTuple, Tuple, Optional
 from functools import partial
 import flax.linen as nn
 
-import sys
-sys.path.insert(0, '/home/claude/waveml-jax')
+from ..core.representation import WaveState, encode_fft, decode_fft, total_energy
+from ..core.invariants import InvariantBounds, DEFAULT_BOUNDS
+from ..core.era_rectify import era_rectify
 
-try:
-    from core.representation import WaveState, encode_fft, decode_fft, total_energy
-    from core.invariants import InvariantBounds, DEFAULT_BOUNDS
-    from core.era_rectify import era_rectify
-except ImportError:
-    from representation import WaveState, encode_fft, decode_fft, total_energy
-    from invariants import InvariantBounds, DEFAULT_BOUNDS
-    from era_rectify import era_rectify
-
-
-# ============================================================================
-# Wave Convolution (Frequency Domain)
-# ============================================================================
 
 @jax.jit
 def wave_conv(state: WaveState, 
@@ -54,15 +42,11 @@ def wave_conv_with_era(state: WaveState,
     return era_rectify(convolved, bounds)
 
 
-# ============================================================================
-# Wave RF Layer
-# ============================================================================
-
 class WaveRFParams(NamedTuple):
     """Parameters for Wave RF layer."""
-    kernel_amp: jnp.ndarray    # (n_filters, n_modes)
-    kernel_phase: jnp.ndarray  # (n_filters, n_modes)
-    bias_amp: jnp.ndarray      # (n_filters,)
+    kernel_amp: jnp.ndarray
+    kernel_phase: jnp.ndarray
+    bias_amp: jnp.ndarray
 
 
 def init_waverf_params(key: jax.random.PRNGKey,
@@ -90,11 +74,9 @@ def waverf_layer(state: WaveState,
     """
     n_filters = params.kernel_amp.shape[0]
     
-    # Apply each filter
-    filtered_amps = state.amplitude[None, :] * params.kernel_amp  # (n_filters, n_modes)
+    filtered_amps = state.amplitude[None, :] * params.kernel_amp
     filtered_phases = state.phase[None, :] + params.kernel_phase
     
-    # Aggregate (mean across filters)
     out_amp = jnp.mean(filtered_amps, axis=0) + jnp.mean(params.bias_amp)
     out_phase = jnp.mean(filtered_phases, axis=0)
     
@@ -105,10 +87,6 @@ def waverf_layer(state: WaveState,
     
     return era_rectify(out_state, bounds)
 
-
-# ============================================================================
-# Multi-Layer Wave RF
-# ============================================================================
 
 def init_waverf_stack(key: jax.random.PRNGKey,
                       n_modes: int,
@@ -131,15 +109,11 @@ def waverf_forward(state: WaveState,
     return state
 
 
-# ============================================================================
-# Flax Module
-# ============================================================================
-
 class WaveRF(nn.Module):
     """
     Wave RF model for signal processing.
     
-    Input signal → FFT → Wave layers + ERA → IFFT → Output signal
+    Input signal -> FFT -> Wave layers + ERA -> IFFT -> Output signal
     """
     n_modes: int
     n_filters: int
@@ -157,10 +131,8 @@ class WaveRF(nn.Module):
         """
         length = signal.shape[-1]
         
-        # Encode to wave state
         state = encode_fft(signal, self.n_modes)
         
-        # Process through layers
         for i in range(self.n_layers):
             kernel_amp = self.param(
                 f'kernel_amp_{i}',
@@ -173,7 +145,6 @@ class WaveRF(nn.Module):
                 (self.n_filters, self.n_modes)
             )
             
-            # Filter and aggregate
             filtered_amp = state.amplitude[None, :] * kernel_amp
             filtered_phase = state.phase[None, :] + kernel_phase
             
@@ -183,88 +154,4 @@ class WaveRF(nn.Module):
             )
             state = era_rectify(state, self.bounds)
         
-        # Decode back to signal
         return decode_fft(state, length)
-
-
-# ============================================================================
-# Tests
-# ============================================================================
-
-def test_wave_rf():
-    """Test Wave RF model."""
-    print("=" * 60)
-    print("  Wave RF Model Tests")
-    print("=" * 60)
-    
-    key = jax.random.PRNGKey(42)
-    n_modes = 32
-    n_filters = 8
-    signal_length = 64
-    
-    # Create test signal
-    t = jnp.linspace(0, 2 * jnp.pi, signal_length)
-    signal = jnp.sin(t) + 0.5 * jnp.sin(3 * t) + 0.1 * jax.random.normal(key, (signal_length,))
-    
-    # Test 1: Wave convolution
-    print("\n[1] Wave convolution...")
-    state = encode_fft(signal, n_modes)
-    kernel_amp = jnp.ones(n_modes) * 0.9
-    kernel_phase = jnp.zeros(n_modes)
-    convolved = wave_conv(state, kernel_amp, kernel_phase)
-    print(f"    Input energy: {total_energy(state):.3f}")
-    print(f"    Output energy: {total_energy(convolved):.3f}")
-    
-    # Test 2: Wave RF layer
-    print("\n[2] Wave RF layer...")
-    params = init_waverf_params(key, n_modes, n_filters)
-    out_state = waverf_layer(state, params)
-    print(f"    Kernel shape: {params.kernel_amp.shape}")
-    print(f"    Output energy: {total_energy(out_state):.3f}")
-    
-    # Test 3: Wave RF stack
-    print("\n[3] Wave RF stack...")
-    params_list = init_waverf_stack(key, n_modes, n_filters, n_layers=3)
-    out_state = waverf_forward(state, params_list)
-    print(f"    Number of layers: {len(params_list)}")
-    print(f"    Output energy: {total_energy(out_state):.3f}")
-    
-    # Test 4: Full model (Flax)
-    print("\n[4] Flax WaveRF model...")
-    model = WaveRF(n_modes=n_modes, n_filters=n_filters, n_layers=3)
-    variables = model.init(key, signal)
-    output = model.apply(variables, signal)
-    print(f"    Input shape: {signal.shape}")
-    print(f"    Output shape: {output.shape}")
-    print(f"    Input energy: {jnp.sum(signal ** 2):.3f}")
-    print(f"    Output energy: {jnp.sum(output ** 2):.3f}")
-    
-    # Test 5: Gradient flow
-    print("\n[5] Gradient flow...")
-    def loss_fn(params, signal):
-        output = model.apply(params, signal)
-        return jnp.mean(output ** 2)
-    
-    grad = jax.grad(loss_fn)(variables, signal)
-    grad_norm = jnp.sqrt(sum(jnp.sum(g ** 2) for g in jax.tree.leaves(grad)))
-    print(f"    Gradient norm: {grad_norm:.6f}")
-    assert not jnp.isnan(grad_norm), "Gradient should not be NaN"
-    
-    # Test 6: Signal reconstruction quality
-    print("\n[6] Signal reconstruction...")
-    # With identity-ish kernels, should roughly preserve signal
-    identity_model = WaveRF(n_modes=n_modes, n_filters=1, n_layers=1)
-    id_vars = identity_model.init(key, signal)
-    reconstructed = identity_model.apply(id_vars, signal)
-    mse = jnp.mean((signal - reconstructed) ** 2)
-    print(f"    Reconstruction MSE: {mse:.6f}")
-    
-    print("\n" + "=" * 60)
-    print("  All Wave RF tests passed! ✓")
-    print("=" * 60)
-    
-    return True
-
-
-if __name__ == "__main__":
-    test_wave_rf()
