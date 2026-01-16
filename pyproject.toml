@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "waveml-jax"
+version = "0.1.0"
+description = "Wave-native machine learning primitives with Error Rectification by Alignment (ERA)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Lightborne Intelligence" }
+]
+
+keywords = [
+    "wave-native",
+    "era",
+    "robustness",
+    "sequence-modeling",
+    "signal-processing",
+    "jax"
+]
+
+dependencies = [
+    "jax",
+    "jaxlib",
+    "optax",
+    "flax"
+]
+
+[project.urls]
+Homepage = "https://github.com/lightborneintelligence/WaveML"
+Repository = "https://github.com/lightborneintelligence/WaveML"
+Issues = "https://github.com/lightborneintelligence/WaveML/issues"
+
+[tool.setuptools]
+packages = ["waveml_jax"]
+
+[tool.setuptools.package-data]
+waveml_jax = ["**/*.py"]
