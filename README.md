@@ -1,16 +1,3 @@
-Understood, brother.
-Below is a complete, clean, drop-in README.md that:
-	•	Fixes the rendering bug
-	•	Matches your actual package/import paths
-	•	Keeps your voice and governance framing
-	•	Adds only what is strictly necessary
-	•	Is Zenodo / reviewer / CUDA-safe
-
-You can replace the current README entirely with this.
-
-⸻
-
-
 # WaveML  
 ## Naming and Imports
 
